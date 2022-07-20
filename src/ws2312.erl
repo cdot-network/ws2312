@@ -5,10 +5,11 @@
 -export([init/1]).
 
 -record(state, {
-    handle = pid() | undefined,
+    handle = pid() :: undefined
+}).
 
 start_link() ->
-    gen_server::start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init() ->
     %% Trap exits to allow for terminate led animation
@@ -18,8 +19,8 @@ init() ->
         {ok, Handle} ->
             State = #state {
                        handle = Handle
-                      }
-                State;
+                      },
+            State;
         _ ->
             undefined
     end.

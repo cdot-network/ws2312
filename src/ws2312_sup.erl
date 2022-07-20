@@ -29,7 +29,7 @@ init([]) ->
     SupFlags = #{strategy => one_for_all,
                  intensity => 0,
                  period => 1},
-    ChildSpecs = [],
+    ChildSpecs = [{ws2312_id, {ws2312, start_link, []}, transient, infinity, worker, dynamic}],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
