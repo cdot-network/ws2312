@@ -10,7 +10,7 @@
         ]).
 
 -export([
-         blink/2
+         blink/0
         ]).
 
 -type led_handle() :: pid() | undefined.
@@ -26,7 +26,7 @@ init([]) ->
     %% Trap exits to allow for terminate led animation
     erlang:process_flag(trap_exit, true),
 
-    case spi:start_link("spidev0.0", []) of
+    case spi:start_link("spidev0.0", [{speed_hz, 4000000}]) of
         {ok, Handle} ->
             State = #state {
                        handle = Handle
@@ -36,10 +36,13 @@ init([]) ->
             {err}
     end.
 
-blink(Pid, State) ->
-    gen_server:cast(Pid, blink, State).
+blink() ->
+    gen_server:cast(?MODULE, blink).
 
-handle_call(Msg, _From, State) ->
+xfer_end(State) ->
+    spi:transfer(State#state.handle, <<2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8>>).
+
+handle_call(Msg, _From, State = #state{}) ->
     lager:warning("Unhandled call ~p: ~p", [Msg, State]),
     {noreply, State}.
 
@@ -47,7 +50,16 @@ handle_cast(blink, State = #state{handle = undefined}) ->
     lager:info("blinking with undefined"),
     {noreply, State};
 handle_cast(blink, State) ->
-    spi:transfer(State#state.handle),
+    spi:transfer(State#state.handle, <<
+                      2#00000000,
+                      2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                      2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                      2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000,
+                      2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                      2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000
+                                       >>),
+
+    xfer_end(State),
     {noreply, State};
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast ~p: ~p", [Msg, State]),
