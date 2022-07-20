@@ -6,7 +6,8 @@
 -export([
          init/1,
          handle_call/3,
-         handle_cast/2
+         handle_cast/2,
+         handle_info/2
         ]).
 
 -export([
@@ -14,9 +15,16 @@
         ]).
 
 -type led_handle() :: pid() | undefined.
+-type led_state() :: always_on | blink | flow.
 
--record(state, {
-    handle :: led_handle()
+-define(BLINK_INTERVAL, 1000). %% msec
+
+-record(state, 
+{
+ handle :: led_handle(),
+ led_state :: led_state(),
+ flipped :: boolean(),
+ blink_interval :: integer()
 }).
 
 start_link() ->
@@ -29,7 +37,10 @@ init([]) ->
     case spi:start_link("spidev0.0", [{speed_hz, 4000000}]) of
         {ok, Handle} ->
             State = #state {
-                       handle = Handle
+                       handle = Handle,
+                       led_state = always_on,
+                       flipped = false,
+                       blink_interval = 600
                       },
             {ok, State};
         _ ->
@@ -48,13 +59,21 @@ handle_cast(blink, State = #state{handle = undefined}) ->
     {noreply, State};
 handle_cast(blink, State) ->
     xfer_pattern(State),
-    {noreply, State};
-handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast ~p: ~p", [Msg, State]),
+    timer:send_interval(State#state.blink_interval, led_blink),
     {noreply, State}.
 
-    
-xfer_pattern(State) ->
+handle_info(led_blink, State) ->
+    xfer_pattern(State),
+    Flipped = case State#state.flipped of
+                  false -> true;
+                  _ -> false
+              end,
+    {noreply, State#state{flipped = Flipped}};
+handle_info(Msg, State) ->
+    lager:warning("Unhandled info ~p: ~p", [Msg, State]),
+    {noreply, State}.
+
+xfer_pattern(State = #state{flipped = false}) ->
     spi:transfer(State#state.handle, 
                  <<
                    2#00000000,
@@ -64,5 +83,15 @@ xfer_pattern(State) ->
                    2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
                    2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000
                  >>),
+    spi:transfer(State#state.handle, <<2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8>>);
+xfer_pattern(State = #state{flipped = true}) ->
+    spi:transfer(State#state.handle, 
+                 <<
+                   2#00000000,
+                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
+                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000
+                 >>),
     spi:transfer(State#state.handle, <<2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8>>).
-
