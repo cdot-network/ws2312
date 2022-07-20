@@ -11,7 +11,8 @@
         ]).
 
 -export([
-         blink/0
+         blink/0,
+         color_to_bin/1
         ]).
 
 -type led_handle() :: pid() | undefined.
@@ -24,7 +25,8 @@
  handle :: led_handle(),
  led_state :: led_state(),
  flipped :: boolean(),
- blink_interval :: integer()
+ blink_interval :: integer(),
+ blink_color :: <<_:24>>
 }).
 
 start_link() ->
@@ -40,7 +42,8 @@ init([]) ->
                        handle = Handle,
                        led_state = always_on,
                        flipped = false,
-                       blink_interval = 600
+                       blink_interval = 1,
+                       blink_color = <<16#FF, 16#00, 16#00>>
                       },
             {ok, State};
         _ ->
@@ -72,6 +75,15 @@ handle_info(led_blink, State) ->
 handle_info(Msg, State) ->
     lager:warning("Unhandled info ~p: ~p", [Msg, State]),
     {noreply, State}.
+
+color_to_bin(Color) ->
+    color_to_bin(Color, <<>>).
+
+color_to_bin(<<>>, Binary) -> Binary;
+color_to_bin(<<1:1, Rest/bits>>, Binary) ->
+    color_to_bin(Rest, <<Binary/bits, 2#1110:4>>);
+color_to_bin(<<0:1, Rest/bits>>, Binary) ->
+    color_to_bin(Rest, <<Binary/bits, 2#1000:4>>).
 
 xfer_pattern(State = #state{flipped = false}) ->
     spi:transfer(State#state.handle, 
