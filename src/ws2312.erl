@@ -11,7 +11,7 @@
         ]).
 
 -export([
-         blink/0,
+         blink/1,
          color_to_bin/1,
          build_led_color/2
         ]).
@@ -55,21 +55,22 @@ init([]) ->
             {err}
     end.
 
-blink() ->
-    gen_server:cast(?MODULE, blink).
+blink(Color) ->
+    gen_server:cast(?MODULE, {blink, Color}).
 
 handle_call(Msg, _From, State = #state{}) ->
     lager:warning("Unhandled call ~p: ~p", [Msg, State]),
     {noreply, State}.
 
-handle_cast(blink, State = #state{handle = undefined}) ->
+handle_cast({blink, _}, State = #state{handle = undefined}) ->
     lager:info("blinking with undefined handle"),
     {noreply, State};
-handle_cast(blink, State) ->
-    xfer_pattern(State),
+handle_cast({blink, Color}, State) ->
     {_, NewState} = cancel_blink(State),
-    {ok, T} = timer:send_interval(NewState#state.blink_interval, led_blink),
-    {noreply, NewState#state{blink_tref = T}}.
+    NextState = NewState#state{blink_color = Color},
+    {ok, T} = timer:send_interval(NextState#state.blink_interval, led_blink),
+    xfer_pattern(NextState),
+    {noreply, NextState#state{blink_tref = T}}.
 
 handle_info(led_blink, State) ->
     xfer_pattern(State),
