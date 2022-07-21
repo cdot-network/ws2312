@@ -12,12 +12,14 @@
 
 -export([
          blink/1,
+         always_on/1,
+         off/0,
          color_to_bin/1,
          build_led_color/2
         ]).
 
 -type led_handle() :: pid() | undefined.
--type led_state() :: always_on | blink | flow.
+-type led_state() :: always_on | blink | flow | off.
 
 -define(BLINK_INTERVAL, 1000). %% msec
 
@@ -27,7 +29,7 @@
  led_state :: led_state(),
  flipped :: boolean(),
  blink_interval :: integer(),
- blink_color :: <<_:24>>,
+ led_color :: <<_:24>>,
  led_num :: integer(),
  blink_tref :: timer:tref() | undefined
 }).
@@ -43,10 +45,10 @@ init([]) ->
         {ok, Handle} ->
             State = #state {
                        handle = Handle,
-                       led_state = always_on,
+                       led_state = off,
                        flipped = false,
                        blink_interval = 1000,
-                       blink_color = <<16#000022:24>>,
+                       led_color = <<16#000022:24>>,
                        led_num = 5,
                        blink_tref = undefined
                       },
@@ -58,19 +60,35 @@ init([]) ->
 blink(Color) ->
     gen_server:cast(?MODULE, {blink, Color}).
 
+always_on(Color) ->
+    gen_server:cast(?MODULE, {always_on, Color}).
+
+off() ->
+    gen_server:cast(?MODULE, off).
+
 handle_call(Msg, _From, State = #state{}) ->
     lager:warning("Unhandled call ~p: ~p", [Msg, State]),
     {noreply, State}.
 
-handle_cast({blink, _}, State = #state{handle = undefined}) ->
-    lager:info("blinking with undefined handle"),
+handle_cast(Msg, State = #state{handle = undefined}) ->
+    lager:info("blinking with undefined handle: ~p", [Msg]),
     {noreply, State};
 handle_cast({blink, Color}, State) ->
     {_, NewState} = cancel_blink(State),
-    NextState = NewState#state{blink_color = Color},
+    NextState = NewState#state{led_state = blink, led_color = Color},
     {ok, T} = timer:send_interval(NextState#state.blink_interval, led_blink),
     xfer_pattern(NextState),
-    {noreply, NextState#state{blink_tref = T}}.
+    {noreply, NextState#state{blink_tref = T}};
+handle_cast({always_on, Color}, State) ->
+    {_, NewState} = cancel_blink(State),
+    NextState = NewState#state{led_state = always_on, led_color = Color},
+    xfer_pattern(NextState),
+    {noreply, NextState};
+handle_cast(off, State) ->
+    {_, NewState} = cancel_blink(State),
+    NextState = NewState#state{led_state = off},
+    xfer_off(NextState),
+    {noreply, NextState}.
 
 handle_info(led_blink, State) ->
     xfer_pattern(State),
@@ -84,13 +102,17 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 cancel_blink(State = #state{blink_tref = undefined}) ->
-    {ok, State};
+    {ok, State#state{ led_state = undefined }};
 cancel_blink(State = #state{}) ->
     case timer:cancel(State#state.blink_tref) of
-        {ok, cancel} -> {ok, State#state { blink_tref = undefined }};
+        {ok, cancel} -> {ok, 
+                         State#state { blink_tref = undefined,
+                                       led_state = undefined }};
         {error, Reason } ->
             lager:warning("failed to cancel blink timer: ~p~n", [Reason]),
-            {error, State#state{ blink_tref = undefined }}
+            {error, 
+             State#state{ blink_tref = undefined, 
+                          led_state = undefined }}
     end.
 
 
@@ -107,16 +129,22 @@ color_to_bin(<<0:1, Rest/bits>>, Binary) ->
 
 build_led_color(Color, N) ->
     ColorBinary = color_to_bin(Color),
-    build_led_binary(ColorBinary, <<0:8>>, N).
+    build_led_binary(ColorBinary, <<0:16>>, N).
 
 build_led_binary(_ColorBinary, Binary, 0) -> <<Binary/bits, 0:48>>;
 build_led_binary(ColorBinary, Binary, N) ->
     build_led_binary(ColorBinary, <<Binary/bits, ColorBinary/bits>>, N-1).
 
-xfer_pattern(State = #state{flipped = false}) ->
-    ColorBinary = build_led_color(State#state.blink_color, State#state.led_num),
+xfer_pattern(State = #state{led_state = always_on}) ->
+    ColorBinary = build_led_color(State#state.led_color, State#state.led_num),
     spi:transfer(State#state.handle,ColorBinary);
-xfer_pattern(State = #state{flipped = true}) ->
+xfer_pattern(State = #state{led_state = blink, flipped = false}) ->
+    ColorBinary = build_led_color(State#state.led_color, State#state.led_num),
+    spi:transfer(State#state.handle,ColorBinary);
+xfer_pattern(State = #state{led_state = blink, flipped = true}) ->
+    xfer_off(State).
+
+xfer_off(State) ->
     spi:transfer(State#state.handle, 
                  <<
                    2#00000000,
@@ -127,3 +155,4 @@ xfer_pattern(State = #state{flipped = true}) ->
                    2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000
                  >>),
     spi:transfer(State#state.handle, <<2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8>>).
+    
