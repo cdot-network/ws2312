@@ -12,7 +12,8 @@
 
 -export([
          blink/0,
-         color_to_bin/1
+         color_to_bin/1,
+         build_led_color/1
         ]).
 
 -type led_handle() :: pid() | undefined.
@@ -42,8 +43,8 @@ init([]) ->
                        handle = Handle,
                        led_state = always_on,
                        flipped = false,
-                       blink_interval = 1,
-                       blink_color = <<16#FF, 16#00, 16#00>>
+                       blink_interval = 1000,
+                       blink_color = <<16#000022:24>>
                       },
             {ok, State};
         _ ->
@@ -81,21 +82,26 @@ color_to_bin(Color) ->
 
 color_to_bin(<<>>, Binary) -> Binary;
 color_to_bin(<<1:1, Rest/bits>>, Binary) ->
+    %% io:format("1:1 Rest: ~p : Binary: ~p~n", [Rest, Binary]),
     color_to_bin(Rest, <<Binary/bits, 2#1110:4>>);
 color_to_bin(<<0:1, Rest/bits>>, Binary) ->
+    %% io:format("0:1 Rest: ~p : Binary: ~p~n", [Rest, Binary]),
     color_to_bin(Rest, <<Binary/bits, 2#1000:4>>).
 
+build_led_color(Color) ->
+    ColorBinary = color_to_bin(Color),
+    build_led_binary(ColorBinary, <<0:8>>).
+
+build_led_binary(ColorBinary, Binary) ->
+    build_led_binary(ColorBinary, Binary, 5).
+
+build_led_binary(_ColorBinary, Binary, 0) -> <<Binary/bits, 0:48>>;
+build_led_binary(ColorBinary, Binary, N) ->
+    build_led_binary(ColorBinary, <<Binary/bits, ColorBinary/bits>>, N-1).
+
 xfer_pattern(State = #state{flipped = false}) ->
-    spi:transfer(State#state.handle, 
-                 <<
-                   2#00000000,
-                   2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
-                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
-                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000,
-                   2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000,
-                   2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#11101000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000, 2#10001000
-                 >>),
-    spi:transfer(State#state.handle, <<2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8, 2#00000000:8>>);
+    ColorBinary = build_led_color(State#state.blink_color),
+    spi:transfer(State#state.handle,ColorBinary);
 xfer_pattern(State = #state{flipped = true}) ->
     spi:transfer(State#state.handle, 
                  <<
