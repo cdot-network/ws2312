@@ -28,7 +28,8 @@
  flipped :: boolean(),
  blink_interval :: integer(),
  blink_color :: <<_:24>>,
- led_num :: integer()
+ led_num :: integer(),
+ blink_tref :: timer:tref() | undefined
 }).
 
 start_link() ->
@@ -46,7 +47,8 @@ init([]) ->
                        flipped = false,
                        blink_interval = 1000,
                        blink_color = <<16#000022:24>>,
-                       led_num = 5
+                       led_num = 5,
+                       blink_tref = undefined
                       },
             {ok, State};
         _ ->
@@ -65,8 +67,9 @@ handle_cast(blink, State = #state{handle = undefined}) ->
     {noreply, State};
 handle_cast(blink, State) ->
     xfer_pattern(State),
-    timer:send_interval(State#state.blink_interval, led_blink),
-    {noreply, State}.
+    {_, NewState} = cancel_blink(State),
+    {ok, T} = timer:send_interval(NewState#state.blink_interval, led_blink),
+    {noreply, NewState#state{blink_tref = T}}.
 
 handle_info(led_blink, State) ->
     xfer_pattern(State),
@@ -78,6 +81,17 @@ handle_info(led_blink, State) ->
 handle_info(Msg, State) ->
     lager:warning("Unhandled info ~p: ~p", [Msg, State]),
     {noreply, State}.
+
+cancel_blink(State = #state{blink_tref = undefined}) ->
+    {ok, State};
+cancel_blink(State = #state{}) ->
+    case timer:cancel(State#state.blink_tref) of
+        {ok, cancel} -> {ok, State#state { blink_tref = undefined }};
+        {error, Reason } ->
+            lager:warning("failed to cancel blink timer: ~p~n", [Reason]),
+            {error, State#state{ blink_tref = undefined }}
+    end.
+
 
 color_to_bin(Color) ->
     color_to_bin(Color, <<>>).
