@@ -13,7 +13,7 @@
 -export([
          blink/0,
          color_to_bin/1,
-         build_led_color/1
+         build_led_color/2
         ]).
 
 -type led_handle() :: pid() | undefined.
@@ -27,7 +27,8 @@
  led_state :: led_state(),
  flipped :: boolean(),
  blink_interval :: integer(),
- blink_color :: <<_:24>>
+ blink_color :: <<_:24>>,
+ led_num :: integer()
 }).
 
 start_link() ->
@@ -44,7 +45,8 @@ init([]) ->
                        led_state = always_on,
                        flipped = false,
                        blink_interval = 1000,
-                       blink_color = <<16#000022:24>>
+                       blink_color = <<16#000022:24>>,
+                       led_num = 5
                       },
             {ok, State};
         _ ->
@@ -88,19 +90,16 @@ color_to_bin(<<0:1, Rest/bits>>, Binary) ->
     %% io:format("0:1 Rest: ~p : Binary: ~p~n", [Rest, Binary]),
     color_to_bin(Rest, <<Binary/bits, 2#1000:4>>). %% 1000 for 0-bit
 
-build_led_color(Color) ->
+build_led_color(Color, N) ->
     ColorBinary = color_to_bin(Color),
-    build_led_binary(ColorBinary, <<0:8>>).
-
-build_led_binary(ColorBinary, Binary) ->
-    build_led_binary(ColorBinary, Binary, 5).
+    build_led_binary(ColorBinary, <<0:8>>, N).
 
 build_led_binary(_ColorBinary, Binary, 0) -> <<Binary/bits, 0:48>>;
 build_led_binary(ColorBinary, Binary, N) ->
     build_led_binary(ColorBinary, <<Binary/bits, ColorBinary/bits>>, N-1).
 
 xfer_pattern(State = #state{flipped = false}) ->
-    ColorBinary = build_led_color(State#state.blink_color),
+    ColorBinary = build_led_color(State#state.blink_color, State#state.led_num),
     spi:transfer(State#state.handle,ColorBinary);
 xfer_pattern(State = #state{flipped = true}) ->
     spi:transfer(State#state.handle, 
