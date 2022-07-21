@@ -83,10 +83,10 @@ color_to_bin(Color) ->
 color_to_bin(<<>>, Binary) -> Binary;
 color_to_bin(<<1:1, Rest/bits>>, Binary) ->
     %% io:format("1:1 Rest: ~p : Binary: ~p~n", [Rest, Binary]),
-    color_to_bin(Rest, <<Binary/bits, 2#1110:4>>);
+    color_to_bin(Rest, <<Binary/bits, 2#1110:4>>); %%  1110 for 1-bit
 color_to_bin(<<0:1, Rest/bits>>, Binary) ->
     %% io:format("0:1 Rest: ~p : Binary: ~p~n", [Rest, Binary]),
-    color_to_bin(Rest, <<Binary/bits, 2#1000:4>>).
+    color_to_bin(Rest, <<Binary/bits, 2#1000:4>>). %% 1000 for 0-bit
 
 build_led_color(Color) ->
     ColorBinary = color_to_bin(Color),
